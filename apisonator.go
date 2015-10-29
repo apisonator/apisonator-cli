@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/ttacon/chalk"
+	"gopkg.in/yaml.v2"
 
 	"github.com/kyokomi/emoji"
 
@@ -24,6 +25,11 @@ type loginResponse struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	APIKey    string `json:"api_key"`
+}
+
+type configYaml struct {
+	Subdomain  string   `yaml:"subdomain"`
+	Middleware []string `yaml:"middleware"`
 }
 
 type createEndpoint struct {
@@ -181,7 +187,8 @@ func create(cmd *cli.Cmd) {
 			if *noBootstrap {
 				fmt.Println("\nBootstrap not created\n")
 			} else {
-				// Ugly eh. ?
+
+				// Ugly eh. Extract
 				resp, _ := http.Get("https://github.com/apisonator/bootstrap/archive/master.zip")
 				defer resp.Body.Close()
 				body, _ := ioutil.ReadAll(resp.Body)
@@ -191,6 +198,26 @@ func create(cmd *cli.Cmd) {
 				Unzip("/tmp/bootstrap.zip", *bootstrapPath)
 				os.Rename(*bootstrapPath+"bootstrap-master", *bootstrapPath+"apisonator-"+*name)
 				fmt.Printf("\t\nBootstrap directory created at: %s\n\n", *bootstrapPath+"apisonator-"+*name)
+
+				// Modify yaml file and set correct subdomain
+				yamlFile, err := ioutil.ReadFile(*bootstrapPath + "apisonator-" + *name + "/config.yml")
+				var config configYaml
+				err = yaml.Unmarshal(yamlFile, &config)
+				if err != nil {
+					panic(err)
+
+				}
+				config.Subdomain = *name
+				mary, err := yaml.Marshal(config)
+				if err != nil {
+					panic(err)
+
+				}
+				err = ioutil.WriteFile(*bootstrapPath+"apisonator-"+*name+"/config.yml", mary, os.FileMode(mode))
+				if err != nil {
+					panic(err)
+
+				}
 			}
 
 		} else {
@@ -222,7 +249,10 @@ func deploy(cmd *cli.Cmd) {
 		data := url.Values{}
 		data.Set("api_key", apiKey)
 		data.Add("config", string(fyml))
-		http.PostForm("http://api.apisonator.io/api/releases.json", data)
+		resp, _ := http.PostForm("http://api.apisonator.io/api/releases.json", data)
+		fmt.Println(resp)
+		body, _ := ioutil.ReadAll(resp.Body)
+		fmt.Println(string(body))
 	}
 }
 
