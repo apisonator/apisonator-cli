@@ -41,6 +41,7 @@ func main() {
 	app.Command("register", "Register user to Apisonator.io", register)
 	app.Command("login", "Login to Apisonator.io", login)
 	app.Command("create", "Create your apisonator endpoint", create)
+	app.Command("deploy", "Deploy your apisonator endpoint", deploy)
 
 	app.Run(os.Args)
 
@@ -175,5 +176,30 @@ func create(cmd *cli.Cmd) {
 			Failed := emoji.Sprintf("\n:red_circle: Subdomain %s does exists\n", *name)
 			fmt.Println(Failed)
 		}
+	}
+}
+
+func deploy(cmd *cli.Cmd) {
+	cmd.Spec = ""
+
+	var ()
+
+	cmd.Action = func() {
+
+		var apiKey string
+		authFilePath := os.Getenv("HOME") + "/.apisonator"
+		f, err := os.Open(authFilePath)
+
+		if err != nil {
+			fmt.Println("Error. Login first")
+			os.Exit(1)
+		}
+
+		fmt.Fscan(f, &apiKey)
+		fyml, _ := ioutil.ReadFile("./test.yml")
+		data := url.Values{}
+		data.Set("api_key", apiKey)
+		data.Add("config", string(fyml))
+		http.PostForm("http://api.apisonator.io/api/releases.json", data)
 	}
 }
