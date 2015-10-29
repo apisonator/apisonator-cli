@@ -1,12 +1,15 @@
 package main
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/ttacon/chalk"
 
@@ -141,11 +144,13 @@ func login(cmd *cli.Cmd) {
 
 func create(cmd *cli.Cmd) {
 
-	cmd.Spec = "SUBDOMAIN ENDPOINT"
+	cmd.Spec = "SUBDOMAIN ENDPOINT [--no-bootstrap | --bootstrap-destination=<dir>]"
 
 	var (
-		name     = cmd.StringArg("SUBDOMAIN", "", "Name for your apisonator proxy $subdomain.apisonator.io")
-		endpoint = cmd.StringArg("ENDPOINT", "", "Your API endpoint")
+		name          = cmd.StringArg("SUBDOMAIN", "", "Name for your apisonator proxy $subdomain.apisonator.io")
+		endpoint      = cmd.StringArg("ENDPOINT", "", "Your API endpoint")
+		noBootstrap   = cmd.BoolOpt("no-bootstrap", false, "Don't create the basic app bootstrap")
+		bootstrapPath = cmd.StringOpt("bootstrap-destination", "./", "Path to create the bootstrap files for your project")
 	)
 
 	cmd.Action = func() {
@@ -170,9 +175,26 @@ func create(cmd *cli.Cmd) {
 			if err := json.Unmarshal(body, &response); err != nil {
 				panic(err)
 			}
-			Success := emoji.Sprintf("\n:white_check_mark: Your apisonator endpoint: %shttp://%s.apisonator.io%s -> %s\n\n", chalk.Green, response.Subdomain, chalk.Reset, response.Endpoint)
+			Success := emoji.Sprintf("\n:white_check_mark: Your apisonator endpoint: %shttp://%s.apisonator.io%s -> %s\n", chalk.Green, response.Subdomain, chalk.Reset, response.Endpoint)
 			fmt.Print(Success)
+
+			if *noBootstrap {
+				fmt.Println("\nBootstrap not created\n")
+			} else {
+				// Ugly eh. ?
+				resp, _ := http.Get("https://github.com/apisonator/bootstrap/archive/master.zip")
+				defer resp.Body.Close()
+				body, _ := ioutil.ReadAll(resp.Body)
+				mode := int(0777)
+				os.Remove("/tmp/bootstrap.zip")
+				ioutil.WriteFile("/tmp/bootstrap.zip", body, os.FileMode(mode))
+				Unzip("/tmp/bootstrap.zip", *bootstrapPath)
+				os.Rename(*bootstrapPath+"bootstrap-master", *bootstrapPath+"apisonator-"+*name)
+				fmt.Printf("\t\nBootstrap directory created at: %s\n\n", *bootstrapPath+"apisonator-"+*name)
+			}
+
 		} else {
+			// move this emoji and success / fail to another
 			Failed := emoji.Sprintf("\n:red_circle: Subdomain %s does exists\n", *name)
 			fmt.Println(Failed)
 		}
@@ -202,4 +224,62 @@ func deploy(cmd *cli.Cmd) {
 		data.Add("config", string(fyml))
 		http.PostForm("http://api.apisonator.io/api/releases.json", data)
 	}
+}
+
+func Unzip(src, dest string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := r.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	os.MkdirAll(dest, 0755)
+
+	// Closure to address file descriptors issue with all the deferred .Close() methods
+	extractAndWriteFile := func(f *zip.File) error {
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := rc.Close(); err != nil {
+				panic(err)
+			}
+		}()
+
+		path := filepath.Join(dest, f.Name)
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(path, f.Mode())
+		} else {
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := f.Close(); err != nil {
+					panic(err)
+				}
+			}()
+
+			_, err = io.Copy(f, rc)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, f := range r.File {
+		err := extractAndWriteFile(f)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
