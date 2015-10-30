@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,8 +23,8 @@ import (
 )
 
 var (
-	//	APIEndpoint = "http://07225c10.ngrok.io"
-	APIEndpoint = "http://api.apisonator.io/"
+	//APIEndpoint = "http://07225c10.ngrok.io"
+	APIEndpoint = "http://api.apisonator.io"
 )
 
 type loginResponse struct {
@@ -77,11 +78,11 @@ func main() {
 
 func register(cmd *cli.Cmd) {
 
-	cmd.Spec = "--email=<email> --password=<password>"
+	cmd.Spec = "EMAIL PASSWORD"
 
 	var (
-		email    = cmd.StringOpt("email", "", "Your email")
-		password = cmd.StringOpt("password", "", "Your password")
+		email    = cmd.StringArg("EMAIL", "", "Your email")
+		password = cmd.StringArg("PASSWORD", "", "Your password")
 	)
 
 	cmd.Action = func() {
@@ -123,11 +124,11 @@ func register(cmd *cli.Cmd) {
 
 func login(cmd *cli.Cmd) {
 
-	cmd.Spec = "--email=<email> --password=<password>"
+	cmd.Spec = "EMAIL PASSWORD"
 
 	var (
-		email    = cmd.StringOpt("email", "", "Your email")
-		password = cmd.StringOpt("password", "", "Your password")
+		email    = cmd.StringArg("EMAIL", "", "Your email")
+		password = cmd.StringArg("PASSWORD", "", "Your password")
 	)
 
 	cmd.Action = func() {
@@ -136,7 +137,7 @@ func login(cmd *cli.Cmd) {
 			data := url.Values{}
 			data.Set("email", *email)
 			data.Add("password", *password)
-			resp, err := http.PostForm("http://api.apisonator.io/api/sessions.json", data)
+			resp, err := http.PostForm(APIEndpoint+"/api/sessions.json", data)
 			if err != nil {
 				panic(err)
 			}
@@ -206,7 +207,6 @@ func create(cmd *cli.Cmd) {
 			if *noBootstrap {
 				fmt.Println("\nBootstrap not created\n")
 			} else {
-
 				// Ugly eh. Extract
 				resp, _ := http.Get("https://github.com/apisonator/bootstrap/archive/master.zip")
 				defer resp.Body.Close()
@@ -271,8 +271,8 @@ func deploy(cmd *cli.Cmd) {
 		data.Set("api_key", apiKey)
 		data.Add("config", string(fyml))
 		resp, _ := http.PostForm(APIEndpoint+"/api/releases.json", data)
-		//fmt.Println(resp)
 
+		fmt.Println("\nUpdated configuration\n")
 		var response ReleaseResponse
 		body, _ := ioutil.ReadAll(resp.Body)
 
@@ -281,12 +281,16 @@ func deploy(cmd *cli.Cmd) {
 		}
 
 		yamlFile, err := ioutil.ReadFile(*bootstrapPath + "/config.yml")
+		if err != nil {
+			fmt.Println("No config.yml found in dir, use --config-path=<dir> and point to parent dir.")
+			os.Exit(1)
+		}
 		var config configYaml
 		err = yaml.Unmarshal(yamlFile, &config)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("Deploying middlewares: ")
+		fmt.Println("\nDeploying middlewares: ")
 
 		for _, middleware := range config.Middleware {
 
@@ -310,6 +314,27 @@ func deploy(cmd *cli.Cmd) {
 			} else {
 				fmt.Printf(" OK.\n")
 			}
+		}
+
+		data = url.Values{}
+		data.Set("api_key", apiKey)
+		data.Add("release_id", strconv.Itoa(response.ID))
+		data.Add("done", "true")
+		r := data.Encode()
+		client := &http.Client{}
+		req, err := http.NewRequest("PUT", APIEndpoint+"/api/releases/"+strconv.Itoa(response.ID)+".json",
+			bytes.NewBufferString(r))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
+		resp, err = client.Do(req)
+		defer resp.Body.Close()
+		if err != nil {
+			panic(err)
+		}
+		if resp.StatusCode != http.StatusNoContent {
+			fmt.Println("Something went wrong :(")
+		} else {
+			fmt.Println("\nDeployed!\n")
 		}
 	}
 }
