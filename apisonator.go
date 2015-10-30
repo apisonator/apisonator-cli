@@ -11,12 +11,19 @@ import (
 	"os"
 	"path/filepath"
 
+	"strconv"
+
 	"github.com/ttacon/chalk"
 	"gopkg.in/yaml.v2"
 
 	"github.com/kyokomi/emoji"
 
 	"github.com/jawher/mow.cli"
+)
+
+var (
+	//	APIEndpoint = "http://07225c10.ngrok.io"
+	APIEndpoint = "http://api.apisonator.io/"
 )
 
 type loginResponse struct {
@@ -26,6 +33,18 @@ type loginResponse struct {
 	UpdatedAt string `json:"updated_at"`
 	APIKey    string `json:"api_key"`
 }
+
+type ReleaseResponse struct {
+	ID        int    `json:"id"`
+	Version   string `json:"version"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Config    string `json:"config"`
+	ProxyID   int    `json:"proxy_id"`
+}
+
+//
+// {"id":17,"user_id":24,"version":"c1Svj9kv1XQQcr9id8Q3WTJH","created_at":"2015-10-29T23:29:31.225Z","updated_at":"2015-10-29T23:29:31.225Z","config":"subdomain: miaumiau1\nmiddleware:\n- middleware01\n- middleware02\n","proxy_id":50}
 
 type configYaml struct {
 	Subdomain  string   `yaml:"subdomain"`
@@ -71,7 +90,7 @@ func register(cmd *cli.Cmd) {
 			data := url.Values{}
 			data.Set("email", *email)
 			data.Add("password", *password)
-			resp, err := http.PostForm("http://api.apisonator.io/api/registrations.json", data)
+			resp, err := http.PostForm(APIEndpoint+"/api/registrations.json", data)
 			if err != nil {
 				panic(err)
 			}
@@ -174,7 +193,7 @@ func create(cmd *cli.Cmd) {
 		data.Add("endpoint", *endpoint)
 		data.Add("api_key", apiKey)
 
-		resp, _ := http.PostForm("http://api.apisonator.io/api/proxies.json", data)
+		resp, _ := http.PostForm(APIEndpoint+"/api/proxies.json", data)
 		body, _ := ioutil.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusCreated {
 			var response createEndpoint
@@ -229,9 +248,11 @@ func create(cmd *cli.Cmd) {
 }
 
 func deploy(cmd *cli.Cmd) {
-	cmd.Spec = ""
+	cmd.Spec = "[--config-path=<dir>]"
 
-	var ()
+	var (
+		bootstrapPath = cmd.StringOpt("config-path", "./", "Parent directory for your config.yml")
+	)
 
 	cmd.Action = func() {
 
@@ -245,14 +266,51 @@ func deploy(cmd *cli.Cmd) {
 		}
 
 		fmt.Fscan(f, &apiKey)
-		fyml, _ := ioutil.ReadFile("./test.yml")
+		fyml, _ := ioutil.ReadFile(*bootstrapPath + "/config.yml")
 		data := url.Values{}
 		data.Set("api_key", apiKey)
 		data.Add("config", string(fyml))
-		resp, _ := http.PostForm("http://api.apisonator.io/api/releases.json", data)
-		fmt.Println(resp)
+		resp, _ := http.PostForm(APIEndpoint+"/api/releases.json", data)
+		//fmt.Println(resp)
+
+		var response ReleaseResponse
 		body, _ := ioutil.ReadAll(resp.Body)
-		fmt.Println(string(body))
+
+		if err := json.Unmarshal(body, &response); err != nil {
+			panic(err)
+		}
+
+		yamlFile, err := ioutil.ReadFile(*bootstrapPath + "/config.yml")
+		var config configYaml
+		err = yaml.Unmarshal(yamlFile, &config)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("Deploying middlewares: ")
+
+		for _, middleware := range config.Middleware {
+
+			middlewareFile, err := ioutil.ReadFile(*bootstrapPath + "/middleware/" + string(middleware) + ".lua")
+
+			if err != nil {
+				panic(err)
+			}
+
+			fmt.Printf("\t- %s", middleware)
+			dataFiles := url.Values{}
+			dataFiles.Set("api_key", apiKey)
+			dataFiles.Add("release_id", strconv.Itoa(response.ID))
+			dataFiles.Add("name", string(middleware))
+			dataFiles.Add("content", string(middlewareFile))
+			//			fmt.Println(dataFiles)
+			resp, _ := http.PostForm(APIEndpoint+"/api/functions.json", dataFiles)
+			if resp.StatusCode != http.StatusCreated {
+				fmt.Println("\nSomething went wrong.. are middlewares specified correctly?")
+				os.Exit(1)
+			} else {
+				fmt.Printf(" OK.\n")
+			}
+		}
 	}
 }
 
