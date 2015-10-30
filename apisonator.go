@@ -71,7 +71,11 @@ func main() {
 	app.Command("login", "Login to Apisonator.io", login)
 	app.Command("create", "Create your apisonator endpoint", create)
 	app.Command("deploy", "Deploy your apisonator endpoint", deploy)
-
+	app.Command("addons", "Addons commands", func(addons *cli.Cmd) {
+		addons.Command("list", "Lists available addons", addonsList)
+		addons.Command("activate", "Activate addon", addonsActivate)
+		addons.Command("info", "Show info about an addon", addonsInfo)
+	})
 	app.Run(os.Args)
 }
 
@@ -229,7 +233,6 @@ func create(cmd *cli.Cmd) {
 				mary, err := yaml.Marshal(config)
 				if err != nil {
 					panic(err)
-
 				}
 				err = ioutil.WriteFile(*bootstrapPath+"apisonator-"+*name+"/config.yml", mary, os.FileMode(mode))
 				if err != nil {
@@ -398,4 +401,100 @@ func Unzip(src, dest string) error {
 	}
 
 	return nil
+}
+
+func addonsList(cmd *cli.Cmd) {
+
+	cmd.Spec = ""
+
+	cmd.Action = func() {
+		fmt.Println("\nAvailable Addons:")
+		fmt.Println("\n\t- 3scale")
+		fmt.Println("\t- analytics")
+		fmt.Println("\t- monitoring")
+		fmt.Println("\n")
+	}
+
+}
+
+func addonsInfo(cmd *cli.Cmd) {
+
+	cmd.Spec = "ADDON"
+
+	var (
+		addon = cmd.StringArg("ADDON", "", "Addon name")
+	)
+
+	cmd.Action = func() {
+		if *addon == "3scale" {
+			fmt.Println("\nAddon: 3scale \n")
+			fmt.Println("3scale's API Management platform gives you the tools you need \n to take control of your API. Trusted by more customers than any other vendor. \n")
+			fmt.Println("Features: ")
+			fmt.Println("  - Rate limit")
+			fmt.Println("  - Billing\n")
+			fmt.Println("Required params for activation:")
+			fmt.Println("  - auth_key_name ")
+			fmt.Println("  - service_id \n\n")
+
+		}
+	}
+
+}
+
+func addonsActivate(cmd *cli.Cmd) {
+
+	cmd.Spec = "ADDON AUTH_KEY_NAME SERVICE_ID PROVIDER_KEY [--application-path=<appPath>]"
+
+	var (
+		addon         = cmd.StringArg("ADDON", "", "Addon name")
+		authKeyName   = cmd.StringArg("AUTH_KEY_NAME", "", "3scale auth_key_name")
+		serviceID     = cmd.StringArg("SERVICE_ID", "", "3scale service_id")
+		providerKey   = cmd.StringArg("PROVIDER_KEY", "", "3scale provider_key")
+		bootstrapPath = cmd.StringOpt("application-path", "./", "Directory of your application")
+	)
+
+	cmd.Action = func() {
+		if *addon == "3scale" {
+			//:(
+			yamlFile, err := ioutil.ReadFile(*bootstrapPath + "/config.yml")
+			var config configYaml
+			err = yaml.Unmarshal(yamlFile, &config)
+			if err != nil {
+				panic(err)
+
+			}
+			mary, err := yaml.Marshal(config)
+			if err != nil {
+				panic(err)
+			}
+			mode := int(0777)
+
+			err = ioutil.WriteFile(*bootstrapPath+"/config.yml", mary, os.FileMode(mode))
+			if err != nil {
+				panic(err)
+
+			}
+
+			f, err := os.OpenFile(*bootstrapPath+"/config.yml", os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
+
+			text := `
+addons:
+  threescale_auth:
+    id: ` + *serviceID + `
+    auth_key_name: ` + *authKeyName + `
+    provider_key: ` + *providerKey
+
+			if _, err = f.WriteString(text); err != nil {
+				panic(err)
+			}
+			fmt.Println("\nDone! Please deploy your application!\n")
+		} else {
+			fmt.Println("\nsoon.")
+		}
+	}
+
 }
