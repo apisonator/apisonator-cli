@@ -1,5 +1,7 @@
 package main
 
+// DISCLAIMER: HACKATON PROJECT QUICK & DIRTY
+
 import (
 	"archive/zip"
 	"bytes"
@@ -10,9 +12,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+
 	"path/filepath"
 
 	"strconv"
+	"strings"
 
 	"github.com/ttacon/chalk"
 	"gopkg.in/yaml.v2"
@@ -50,6 +55,7 @@ type ReleaseResponse struct {
 type configYaml struct {
 	Subdomain  string   `yaml:"subdomain"`
 	Middleware []string `yaml:"middleware"`
+	Endpoint   string   `yaml:"endpoint"`
 }
 
 type createEndpoint struct {
@@ -76,6 +82,8 @@ func main() {
 		addons.Command("activate", "Activate addon", addonsActivate)
 		addons.Command("info", "Show info about an addon", addonsInfo)
 	})
+	app.Command("test", "Test your apisonator endpoint", test)
+
 	app.Run(os.Args)
 }
 
@@ -116,7 +124,7 @@ func register(cmd *cli.Cmd) {
 				defer authFile.Close()
 				fmt.Fprintln(authFile, response.APIKey)
 
-				fmt.Println("Registered correctly. Logged!")
+				fmt.Printf("\n%sRegistered correctly. Logged!%s\n\n", chalk.Green, chalk.Reset)
 
 			} else {
 				fmt.Println("Invalid Email")
@@ -230,6 +238,7 @@ func create(cmd *cli.Cmd) {
 
 				}
 				config.Subdomain = *name
+				config.Endpoint = *endpoint
 				mary, err := yaml.Marshal(config)
 				if err != nil {
 					panic(err)
@@ -434,8 +443,8 @@ func addonsInfo(cmd *cli.Cmd) {
 			fmt.Println("  - Billing\n")
 			fmt.Println("Required params for activation:")
 			fmt.Println("  - auth_key_name ")
+			fmt.Println("  - provider_key ")
 			fmt.Println("  - service_id \n\n")
-
 		}
 	}
 
@@ -497,4 +506,67 @@ addons:
 		}
 	}
 
+}
+
+func test(cmd *cli.Cmd) {
+
+	cmd.Spec = "COMMAND [ARG...] [--application-path=<appPath>]"
+
+	var (
+		command       = cmd.StringArg("COMMAND", "", "Command to run for test")
+		args          = cmd.StringsArg("ARG", nil, "Arguments")
+		bootstrapPath = cmd.StringOpt("application-path", "./", "Directory of your application")
+	)
+
+	cmd.Action = func() {
+
+		var apiKey string
+		authFilePath := os.Getenv("HOME") + "/.apisonator"
+		f, err := os.Open(authFilePath)
+		if err != nil {
+			fmt.Println("Error. Login first")
+			os.Exit(1)
+		}
+		fmt.Fscan(f, &apiKey)
+
+		yamlFile, err := ioutil.ReadFile(*bootstrapPath + "/config.yml")
+		var config configYaml
+		err = yaml.Unmarshal(yamlFile, &config)
+		if err != nil {
+			panic(err)
+
+		}
+
+		data := url.Values{}
+		data.Add("endpoint", config.Endpoint)
+		data.Add("api_key", apiKey)
+
+		resp, _ := http.PostForm(APIEndpoint+"/api/proxies.json", data)
+
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+
+		if resp.StatusCode == http.StatusCreated {
+			var response createEndpoint
+			if err := json.Unmarshal(body, &response); err != nil {
+				panic(err)
+			}
+			Success := emoji.Sprintf("\n Testing with endpoint: %shttp://%s.apisonator.io%s -> %s\n", chalk.Green, response.Subdomain, chalk.Reset, response.Endpoint)
+			fmt.Println(Success)
+			arguments := strings.Join(*args, " ")
+			testCommand := "ENV=" + response.Subdomain + " " + *command + " " + arguments
+			//out, err := exec.Command("bash", "-c", testCommand).Output()
+			cmd := exec.Command("bash", "-c", testCommand)
+			cmd.Stdout = os.Stdout
+			cmd.Stdin = os.Stdin
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+			if err != nil {
+				fmt.Println("Command failed..")
+
+			}
+		} else {
+			fmt.Println("Something went wrong :()")
+		}
+	}
 }
