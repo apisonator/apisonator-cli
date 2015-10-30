@@ -553,8 +553,9 @@ func test(cmd *cli.Cmd) {
 			}
 			Success := emoji.Sprintf("\n Testing with endpoint: %shttp://%s.apisonator.io%s -> %s\n", chalk.Green, response.Subdomain, chalk.Reset, response.Endpoint)
 			fmt.Println(Success)
+
 			arguments := strings.Join(*args, " ")
-			testCommand := "ENV=" + response.Subdomain + " " + *command + " " + arguments
+			testCommand := "export ENDPOINT=http://" + config.Subdomain + ".apisonator.io ; " + *command + " " + arguments
 			//out, err := exec.Command("bash", "-c", testCommand).Output()
 			cmd := exec.Command("bash", "-c", testCommand)
 			cmd.Stdout = os.Stdout
@@ -563,7 +564,6 @@ func test(cmd *cli.Cmd) {
 			cmd.Run()
 			if err != nil {
 				fmt.Println("Command failed..")
-
 			}
 		} else {
 			fmt.Println("Something went wrong :()")
