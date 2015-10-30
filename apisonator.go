@@ -73,7 +73,6 @@ func main() {
 	app.Command("deploy", "Deploy your apisonator endpoint", deploy)
 
 	app.Run(os.Args)
-
 }
 
 func register(cmd *cli.Cmd) {
@@ -272,24 +271,28 @@ func deploy(cmd *cli.Cmd) {
 		data.Add("config", string(fyml))
 		resp, _ := http.PostForm(APIEndpoint+"/api/releases.json", data)
 
-		fmt.Println("\nUpdated configuration\n")
 		var response ReleaseResponse
 		body, _ := ioutil.ReadAll(resp.Body)
 
 		if err := json.Unmarshal(body, &response); err != nil {
 			panic(err)
 		}
+		fmt.Println("\nStarting deploy")
 
 		yamlFile, err := ioutil.ReadFile(*bootstrapPath + "/config.yml")
 		if err != nil {
-			fmt.Println("No config.yml found in dir, use --config-path=<dir> and point to parent dir.")
+			fmt.Println("\nNo config.yml found in dir, use --config-path=<dir> and point to parent dir.\n")
 			os.Exit(1)
 		}
+
 		var config configYaml
 		err = yaml.Unmarshal(yamlFile, &config)
 		if err != nil {
 			panic(err)
 		}
+
+		fmt.Printf("\nUpdated configuration for: http://%s.apisonator.io\n", string(config.Subdomain))
+
 		fmt.Println("\nDeploying middlewares: ")
 
 		for _, middleware := range config.Middleware {
@@ -312,7 +315,7 @@ func deploy(cmd *cli.Cmd) {
 				fmt.Println("\nSomething went wrong.. are middlewares specified correctly?")
 				os.Exit(1)
 			} else {
-				fmt.Printf(" OK.\n")
+				fmt.Printf(" %sOK%s.\n", chalk.Green, chalk.Reset)
 			}
 		}
 
@@ -334,7 +337,7 @@ func deploy(cmd *cli.Cmd) {
 		if resp.StatusCode != http.StatusNoContent {
 			fmt.Println("Something went wrong :(")
 		} else {
-			fmt.Println("\nDeployed!\n")
+			fmt.Printf("\n%sCorrectly deployed.%s\n\n", chalk.Green, chalk.Reset)
 		}
 	}
 }
